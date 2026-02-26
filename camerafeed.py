@@ -3,6 +3,7 @@ import numpy as np
 import threading
 import time
 from datetime import datetime
+import config
 
 class video_feed:
 
@@ -13,7 +14,6 @@ class video_feed:
         self.i = 0
         self.thread = threading.Thread()
         self.aspect_ratio = 0.0
-        self.CAM_FPS = 0
         self.realtime_fps = 0.0
         self.recording = False
         self.out = cv.VideoWriter()
@@ -23,23 +23,19 @@ class video_feed:
  
     def getVideo(self):
         ONE_MORBILLION = 1_000_000
-        if(self.recording is True):
-            filename = input("Enter the name of the file to save to: ")
-            
-            
+        print(config.annotated_livestream_path)
         cap = cv.VideoCapture(0)
         width = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
         self.CAM_FPS = int(cap.get(cv.CAP_PROP_FPS))
         
         if(self.recording is True):
-            self.out = cv.VideoWriter(rf"C:\Users\joshu\Documents\projects\idk_man_the_fucking_shotput_coach_thing\vods\{filename}.avi",
-                                 cv.VideoWriter.fourcc('M', 'J', 'P', 'G'),
+            out = cv.VideoWriter(f"{config.annotated_livestream_path}",
+                                 cv.VideoWriter.fourcc('M', 'P', '4', 'V'),
                                  20,
                                  (width, height))
     
         start_timestamp = time.perf_counter_ns() // ONE_MORBILLION
-        
         
         if not cap.isOpened():
             print("Cannot open camera")
@@ -53,7 +49,7 @@ class video_feed:
             world_clock = datetime.now()
             
             ret, frame, = cap.read()
-
+            
             if not ret:
                 print("Can't receive frame (stream end?) Exiting.")
                 break
@@ -73,7 +69,7 @@ class video_feed:
         end_timestamp = int(time.perf_counter_ns()) / ONE_MORBILLION 
         total_time = end_timestamp - start_timestamp
         
-        self.realtime_fps = self.num_of_frame // total_time
+        self.realtime_fps = self.num_of_frame / total_time
 
 vid_object=video_feed()
 
