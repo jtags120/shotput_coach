@@ -23,12 +23,12 @@ if __name__ == "__main__":
                 
         case "image":
             config.image_path = input("What is the path to your image? ")
-            import image_landmarks
+            import processing.image_landmarks as image_landmarks
             image_landmarks.run()     
         case "video":
             try:
                 config.video_path = input("What is the path to your video?: ")
-                import video_landmark        
+                import processing.video_landmark as video_landmark        
                 video_landmark.run()
             except Exception as e:
                 print(f"An error has occurred: {e}")
@@ -36,7 +36,7 @@ if __name__ == "__main__":
         case "stream":
             
             record = input("Would you like to record this stream?(y/n): ")
-            import livestream_landmarks    
+            import processing.livestream_landmarks as livestream_landmarks    
             if(record.strip().lower() == "y"):
                 if(not config.remember):
                     config.annotated_livestream_path = input("Where would you like to save this stream?: ")
