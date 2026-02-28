@@ -4,3 +4,4 @@ refresh_gitignore.bat
 pose_landmarker_heavy.task
 .gitignore
 /processing
+config.py
