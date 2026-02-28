@@ -40,7 +40,7 @@ def make_filters(landmark_list, CAM_FPS):
         
     return filters
     
-def smooth_landmarks(landmark_list: list, filters: list): # type: ignore
+def smooth_landmarks(landmark_list, filters: list):
     smoothed = []
     
     for i, landmark in enumerate(landmark_list):
@@ -48,5 +48,13 @@ def smooth_landmarks(landmark_list: list, filters: list): # type: ignore
         curr_filter = filters[i]
         curr_filter.predict()
         curr_filter.update(z)
-        smoothed.append(filters[i].x[:3])
+        return_stats(curr_filter.x)
+        smoothed.append(curr_filter)
     return smoothed    
+
+def return_stats(frame):
+    x, y, z = frame[:3]
+    vx, vy, vz = frame[3:6]
+    ax, ay, az = frame[6:9]
+    
+    return np.array([x, y, z, vx, vy, vz, ax, ay, az])

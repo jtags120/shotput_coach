@@ -6,7 +6,7 @@ import cv2 as cv
 import numpy as np
 from PySide6.QtWidgets import QApplication, QMainWindow, QPushButton, QWidget
 import config
-#from kalman_smooth import *
+import processing.kalman_smooth as kalman_smooth
 import sys
 
 
@@ -17,7 +17,9 @@ VisionRunningMode = mp.tasks.vision.RunningMode
 app = QApplication([])
 
 options = PoseLandmarkerOptions(
-        base_options = BaseOptions(model_asset_path=config.model_path),
+        base_options = BaseOptions(model_asset_path=config.model_path,
+                                   #delegate = BaseOptions.Delegate.GPU
+                                   ),
         running_mode=VisionRunningMode.VIDEO)
 
 def draw_landmarks_on_image(rgb_image, result):
@@ -39,6 +41,7 @@ def draw_landmarks_on_image(rgb_image, result):
 
 def run():
     global annotated_frame
+    
     with PoseLandmarker.create_from_options(options) as landmarker:
         cv.namedWindow("Landmarks", cv.WINDOW_KEEPRATIO)
         
@@ -52,35 +55,61 @@ def run():
         
 
         start_time = int(cap.get(cv.CAP_PROP_POS_MSEC))
-        frame_resized = frame.astype(np.uint8)
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_resized)
+        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
         result = landmarker.detect_for_video(mp_image, start_time)
-        #filters = make_filters(result.pose_landmarks[0], CAM_FPS)
+        filters = kalman_smooth.make_filters(result.pose_landmarks[0], CAM_FPS)
         
         
-        ###    gui = get_window()
+        #gui = get_window()
         
+        def on_scrub(val):
+            nonlocal current_frame, paused, updating_trackbar
+            if updating_trackbar:
+                return
+            current_frame = val
+            paused = True
         
+        cv.createTrackbar('', 'Landmarks', 0, int(cap.get(cv.CAP_PROP_FRAME_COUNT)), on_scrub)
+        i = 0
         while cap.isOpened():
             ret, frame = cap.read()
             if not ret:
                 break
             start_time = int(cap.get(cv.CAP_PROP_POS_MSEC))
-            frame_resized = frame.astype(np.uint8)
-            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame_resized)
+            
+            height, width = frame.shape[:2]
+            if width > height:
+                frame = cv.resize(frame, (1920, 1080))
+            else:
+                height = cv.resize(frame, (1080, 1920))
+            
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=frame)
             result = landmarker.detect_for_video(mp_image, start_time)
                 
             
-            # if result.pose_landmarks:
-            #         smoothed = smooth_landmarks(result.pose_landmarks[0], filters)
-
-            # for i, filter in enumerate(smoothed):
-            #     result.pose_landmarks[0][i].x = filter[0]
-            #     result.pose_landmarks[0][i].y = filter[1]
-            #     result.pose_landmarks[0][i].z = filter[2]
+            if  len(result.pose_landmarks) > 0:
+                landmarks = result.pose_landmarks[0]
+                
+                smoothed = kalman_smooth.smooth_landmarks(landmarks, filters)
+                
+                for i, filter in enumerate(smoothed):
+                    landmarks[i].x = filter.x[0]
+                    landmarks[i].y = filter.x[1]
+                    landmarks[i].z = filter.x[2]
+            else:
+                continue
             
-            annotated_frame = draw_landmarks_on_image(frame_resized, result)
+            annotated_frame = draw_landmarks_on_image(frame, result)
+            cv.imshow("Landmarks", annotated_frame)
             
+            updating_trackbar = True
+            i += 1
+            cv.setTrackbarPos('', 'Landmarks', i)
+            updating_trackbar = False
+            
+            key = cv.waitKey(int(1000 / CAM_FPS)) & 0xFF
+            if key == ord('q'):
+                break
             
             annotated_frames.append(annotated_frame)
             timestamps.append(start_time)
@@ -92,20 +121,10 @@ def run():
         paused = False
         updating_trackbar = False
         
-        def on_scrub(val):
-            nonlocal current_frame, paused, updating_trackbar
-            if updating_trackbar:
-                return
-            current_frame = val
-            paused = True
-        
-        cv.createTrackbar('', 'Landmarks', 0, total_frames, on_scrub)
-        
         while True:
             key = cv.waitKey(int(1000/CAM_FPS)) & 0xFF
             for frame in annotated_frames:
-                cv.imshow("Landmarks", frame)
-                
+
                 if key == ord('q'):
                     cv.destroyAllWindows()
                     print("Goodbye!")
@@ -117,9 +136,7 @@ def run():
                 
                 if not paused:
                     current_frame = min(current_frame + 1, total_frames)
-                    updating_trackbar = True
-                    cv.setTrackbarPos('', 'Landmarks', current_frame)
-                    updating_trackbar = False
+                    
             
             
             

@@ -1,0 +1,4 @@
+config.py
+pose_landmarker_heavy.task
+__pycache__
+/processing/__pycache__

@@ -119,7 +119,7 @@ def run(recording: bool):
                     landmarker.detect_async(mp_image, frame_timestamp_ms)
                     
                     
-                    if latest_frame is not None:
+                    if latest_frame is not None and vid_object.recording:
                         vid_object.out.write(latest_frame)
                         cv.imshow("Test", latest_frame)
                     
