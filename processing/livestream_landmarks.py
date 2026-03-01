@@ -56,7 +56,9 @@ def run(recording: bool):
     with PoseLandmarker.create_from_options(options) as landmarker:
         temp_i = -1
         try:
-            cv.namedWindow("Test", cv.WINDOW_KEEPRATIO)
+            
+            annotated_frames = []
+            timestamps = []
 
             vid_object.filming = True
             vid_object.thread.start()
@@ -78,41 +80,6 @@ def run(recording: bool):
                     
                     frame_timestamp_ms = frame_info[1]
                     
-                    timestamp = datetime.datetime.now()
-                    format_timestamp = (timestamp.strftime('%Y-%m-%d %H:%M:%S'))
-                    font = cv.FONT_HERSHEY_SIMPLEX
-                    scale = 1.0
-                    color = (255, 255, 255)
-                    thickness = 1
-        
-                    height, width, _ = frame.shape
-                    aspect_ratio = vid_object.aspect_ratio
-                    height = int(round((width / aspect_ratio), 0))
-
-                    (text_width, text_height), baseline = cv.getTextSize(format_timestamp,
-                                                            font,
-                                                            scale,
-                                                            thickness)
-                    x_offset = int(width * 0.05)
-                    y_offset = int(height * 0.05)
-                
-                    org_x = int(width - text_width - x_offset)
-                    org_y = int(height - y_offset)
-        
-                    cv.rectangle(
-                        frame,
-                        (org_x - 2, org_y - text_height - 2),
-                        (org_x + text_width + 2, org_y + baseline + 2),
-                        (0, 0, 0),
-                        thickness = -1)
-        
-                    cv.putText(frame,
-                            format_timestamp,
-                            (org_x, org_y),
-                            font,
-                            scale,
-                            color,
-                            thickness)
                     
                     rgb_frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
                     mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
@@ -120,8 +87,10 @@ def run(recording: bool):
                     
                     
                     if latest_frame is not None and vid_object.recording:
+                        annotated_frames.append(latest_frame)
+                        timestamps.append(frame_timestamp_ms)
                         vid_object.out.write(latest_frame)
-                        cv.imshow("Test", latest_frame)
+                        
                     
                 temp_i = i
                 
@@ -134,3 +103,5 @@ def run(recording: bool):
         except KeyboardInterrupt:
             vid_object.filming = False
         vid_object.thread.join()
+    
+    return (annotated_frames, timestamps)

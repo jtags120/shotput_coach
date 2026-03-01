@@ -62,14 +62,14 @@ def run():
         
         #gui = get_window()
         
-        def on_scrub(val):
-            nonlocal current_frame, paused, updating_trackbar
-            if updating_trackbar:
-                return
-            current_frame = val
-            paused = True
+        # def on_scrub(val):
+        #     nonlocal current_frame, paused, updating_trackbar
+        #     if updating_trackbar:
+        #         return
+        #     current_frame = val
+        #     paused = True
         
-        cv.createTrackbar('', 'Landmarks', 0, int(cap.get(cv.CAP_PROP_FRAME_COUNT)), on_scrub)
+        # cv.createTrackbar('', 'Landmarks', 0, int(cap.get(cv.CAP_PROP_FRAME_COUNT)), on_scrub)
         i = 0
         while cap.isOpened():
             ret, frame = cap.read()

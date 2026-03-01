@@ -42,8 +42,5 @@ def run():
         np_image = image.numpy_view()  # returns RGB np array
         bgr_image = cv.cvtColor(np_image, cv.COLOR_RGB2BGR)  # convert for OpenCV display
 
-        landmark_image = draw_landmarks_on_image(bgr_image, pose_landmarks)
-
-        cv.imshow("Test", landmark_image)
-        cv.waitKey(0)
-        cv.destroyAllWindows()
+        annotated_image = draw_landmarks_on_image(bgr_image, pose_landmarks)
+    return annotated_image
