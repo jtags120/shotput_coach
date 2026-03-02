@@ -8,6 +8,7 @@ import config
 import cv2 as cv
 import processing.camerafeed as camerafeed
 import processing.kalman_smooth
+import gui_handler
 
 ###Mix batch processing, thread pooling, and an initial 5 second buffer.
 ##Ensure batch_size and max_threads are memory and resource efficient.
@@ -27,9 +28,8 @@ options = None
 
 class process(QThread):
     image = Signal(np.ndarray, int)
-    def __init__(self, process_type: str, cap=None):
+    def __init__(self, process_type: str):
         super().__init__()
-        self.cap = cap
         self.frames = []
         self.process_type = process_type
         self.recording = False
@@ -57,7 +57,8 @@ class process(QThread):
                     running_mode=VisionRunningMode.LIVE_STREAM,
                     result_callback=self.callback,
                 )
-                self.set_recording()
+                lil_guy = gui_handler.RecordingWindow()
+                lil_guy.is_recording.connect(self.set_recording)
                 self.x = 2
                 
     def callback(self, result: PoseLandmarkerResult, output_image: mp.Image): # type: ignore
@@ -89,22 +90,27 @@ class process(QThread):
         return annotated_image
     
     
-    def run(self, recording: bool = False):
-        print("run called")
+    def run(self):
         try:
-            print("creating landmarker")
             landmarker = PoseLandmarker.create_from_options(self.options)
-            print("landmarker created")
-            self.process(landmarker, recording)
-            print("process done")
+            self.process(landmarker)
         except Exception as e:
             import traceback
             traceback.print_exc()
+        return 
     
-    def process(self, landmarker, recording = False, cap = cv.VideoCapture()):
+    @Slot(camerafeed.video_feed)
+    def get_vid_object(self, vid_object: camerafeed.video_feed):
+        self.vid_object = vid_object
+    
+    
+            
+            
+    def process(self, landmarker, cap = cv.VideoCapture()):
         
+        #Image
         if(self.x==0):
-            image = mp.Image.create_from_file(fr"{config.image_path}")
+            image = mp.Image.create_from_file("")
             pose_result = landmarker.detect(image)
             pose_landmarks = pose_result.pose_landmarks
             
@@ -113,10 +119,8 @@ class process(QThread):
             annotated_image = self.draw_landmarks_on_image(np_image, pose_landmarks)
             
             return annotated_image
-            
-        if(self.x == 2):
-            vid_object = camerafeed.vid_object
-            vid_object.recording = recording
+        
+        
         
         ##Landmarker line(not really but its helping me conceptualize)
         try:
@@ -126,16 +130,13 @@ class process(QThread):
             self.total_frames = int(self.cap.get(cv.CAP_PROP_FRAME_COUNT))
             print(f"FPS: {self.CAM_FPS}, total frames: {self.total_frames}")
             
-            annotated_frames = []
-            timestamps = []
-            
             if(self.x == 2):
                 vid_object.filming = True
                 vid_object.thread.start()        
         
             if not cap.isOpened():
-                exit()
-            
+                return
+            filters = processing.kalman_smooth.make_filters(result.pose_landmarks[0], self.CAM_FPS)
             while cap.isOpened():
                 
                    
@@ -161,7 +162,7 @@ class process(QThread):
                     
                 if  len(result.pose_landmarks) > 0:
                     landmarks = result.pose_landmarks[0]
-                    filters = processing.kalman_smooth.make_filters(result.pose_landmarks[0], self.CAM_FPS)
+                   
                     smoothed = processing.kalman_smooth.smooth_landmarks(landmarks, filters)
                                         
                     for i, filter in enumerate(smoothed):
@@ -172,17 +173,14 @@ class process(QThread):
                     continue
                     
                 annotated_frame = self.draw_landmarks_on_image(frame, result)
-                annotated_frames.append(annotated_frame)
-                timestamps.append(start_time)
+
                     
                 self.image.emit(annotated_frame, start_time)
-                       
-                   
+                                
         except KeyboardInterrupt:
-            return
-        if(self.x == 2):
-            vid_object.filming = False
-            vid_object.thread.join()
+            if(self.x == 2):
+                vid_object.filming = False
+                vid_object.thread.join()
         
         
         

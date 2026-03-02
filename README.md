@@ -49,3 +49,13 @@ Select processing mode:
 ## Controls
 
 - Press `Q` to quit during video or stream playback
+
+
+todo
+make deployable
+switch to rtmpose
+finish gui
+create fastapi api
+test consolidated processing file
+angles(-_-)
+triple layer kalman between each phase of the throw

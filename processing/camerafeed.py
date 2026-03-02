@@ -1,19 +1,17 @@
 import cv2 as cv
 import numpy as np
-import threading
 import time
 from datetime import datetime
-from idk_man_the_fucking_shotput_coach_thing.gui_handler import RecordingWindow
-from PySide6.QtCore import Slot
+import gui_handler
+from PySide6.QtCore import Slot, QThread
 
-class video_feed:
+class video_feed(QThread):
 
     def __init__(self):
         self.filming = False
         self.footage = {}
         self.fps = 0
         self.i = 0
-        self.thread = threading.Thread()
         self.aspect_ratio = 0.0
         self.realtime_fps = 0.0
         self.recording = False
@@ -34,10 +32,10 @@ class video_feed:
         width = int(cap.get(cv.CAP_PROP_FRAME_WIDTH))
         height = int(cap.get(cv.CAP_PROP_FRAME_HEIGHT))
         self.CAM_FPS = int(cap.get(cv.CAP_PROP_FPS))
-        self.recording_window = RecordingWindow()
+        
+        self.recording_window = gui_handler.RecordingWindow()
         self.recording_window.is_recording.connect(self.update_recording)  
         if(self.recording is True):
-            
             out = cv.VideoWriter(self.file_path,
                                  cv.VideoWriter.fourcc('M', 'P', '4', 'V'),
                                  20,
@@ -62,6 +60,8 @@ class video_feed:
                 print("Can't receive frame (stream end?) Exiting.")
                 break
             
+            if(self.recording is True):
+                out.write(frame)
             self.footage[self.i] = [frame, timestamp, world_clock]
            
             self.i += 1
@@ -79,7 +79,3 @@ class video_feed:
         total_time = end_timestamp - start_timestamp
         
         self.realtime_fps = self.num_of_frame / total_time
-
-vid_object=video_feed()
-
-vid_object.thread = threading.Thread(target=vid_object)
