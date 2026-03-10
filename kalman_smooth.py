@@ -1,3 +1,7 @@
+# This Python file uses the following encoding: utf-8
+
+# if __name__ == "__main__":
+#     pass
 import numpy as np
 import filterpy
 from filterpy import kalman
@@ -29,32 +33,32 @@ def make_filters(landmark_list, CAM_FPS):
         filter.Q = np.eye(9) * 0.5
         #Measurement Noise
         filter.R = np.eye(3) * 0.01
-        
+
         filter.P = np.eye(9) * 1000.
-        
+
         x = landmark_list[i].x
         y = landmark_list[i].y
         z = landmark_list[i].z
-        
+
         filter.x = np.array([x, y, z, 0, 0, 0, 0, 0, 0])
-        
+
     return filters
-    
+
 def smooth_landmarks(landmark_list, filters: list):
     smoothed = []
-    
+
     for i, landmark in enumerate(landmark_list):
         z = np.array([landmark.x, landmark.y, landmark.z])
         curr_filter = filters[i]
         curr_filter.predict()
         curr_filter.update(z)
-        return_stats(curr_filter.x)
+        stats = return_stats(curr_filter.x)
         smoothed.append(curr_filter)
-    return smoothed    
+    return smoothed
 
 def return_stats(frame):
     x, y, z = frame[:3]
     vx, vy, vz = frame[3:6]
     ax, ay, az = frame[6:9]
-    
+
     return np.array([x, y, z, vx, vy, vz, ax, ay, az])

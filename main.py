@@ -1,53 +1,129 @@
-import gui_handler
-import processing.processing as processing
+
+import processing
 from PySide6.QtCore import Slot, Signal, QThread, QObject
 from PySide6.QtWidgets import QApplication
 import cv2 as cv
 import sys
-import processing.camerafeed as camera
+import numpy as np
+import gui
 
 class Main(QObject):
-    data = Signal(camera.video_feed)
+    process_signal = Signal(str)
+    data = Signal(cv.VideoCapture)
+    frame_transfer = Signal(np.ndarray, int)
     def __init__(self):
+        super().__init__()
         self.process_type = ""
+        
         self.cap = None
-        self.main_window = gui_handler.MainWindow()
-        self.main_window.type.connect(self.set_process)
-        self.main_window.file_path.connect(self.set_capture) # type: ignore
+        
+    def fetch(self, mode, file, output, save_annotated, save_raw, raw_stream):
+        self.process_type = mode
+        self.path = file
+        if save_annotated:
+            self.output = output
+        if save_raw:
+            self.raw_stream = raw_stream
+        
         
     @Slot(str)
     def set_process(self, process_type: str):
         self.process_type = process_type
-        self.processor = processing.process(process_type)
         
-        
-    def set_capture(self, path: str):
-        self.cap = None
-        if self.process_type == "video":
-            self.cap = cv.VideoCapture(path)
-        elif self.process_type == "livestream":    
-            self.vid_object = camera.video_feed()
-            self.video_thread = QThread()
-            self.vid_object.moveToThread(self.video_thread)
-            
         
     def run(self):
-        app = QApplication(sys.argv)
-        worker = processing.process(self.process_type, self.cap) # type: ignore
-        self.data.connect(worker.get_vid_object)
+        self.gui = gui.GUI(self)
+        self.gui.show()
+   
+    def start_processing_threads(self):
+        self.worker = processing.process(self.process_type)
+        self.capture_worker = Capture(self.process_type, self.path)
+        self.capture_worker.total_frames.connect(self.gui.processing_screen.set_total_frames)
+        self.camera_thread = QThread()
+        self.worker_thread = QThread()
+    
+        self.worker.moveToThread(self.worker_thread)
+        self.capture_worker.moveToThread(self.camera_thread)
         
-        worker_thread = QThread()
-        worker.moveToThread(worker_thread)
-        gui = self.main_window
+        self.capture_worker.capture_signal.connect(self.worker.new_frame)
         
-        worker_thread.started.connect(worker.run)
-        worker.image.connect(gui.update_frame)
-        worker_thread.start()
-        main = Main()
-        main.main_window.show() 
-        sys.exit(app.exec())
+        self.capture_worker.fps.connect(self.worker.update_fps)
+        self.worker.image.connect(self.gui.processing_screen.display_frame)
+
+        self.worker_thread.started.connect(self.worker.run)
+        self.camera_thread.started.connect(self.capture_worker.run)
         
+        self.camera_thread.start()
+        self.worker_thread.start()
+        print("threads started")   
+        
+    @Slot(np.ndarray, int)
+    def  captureFrame(self):
+        print("received frame in main")
+        self.worker.image.connect(self.updateFrame)
+    
+    def updateFrame(self, data: np.ndarray, timestamp: int):
+        self.frame_transfer.emit(data, timestamp)
+        print("emitted frame in main")       
+
+class Capture(QThread):
+    capture_signal = Signal(bool, np.ndarray)
+    fps = Signal(int)
+    total_frames = Signal(int)
+    running = Signal(bool)
+    seek_signal = Signal(int)
+    
+    def __init__(self, mode: str, video_path: str):
+        super().__init__()
+        
+        self.mode = mode
+        self.video_path = video_path
+        self.cap = None
+
+        if self.mode == "video":
+            self.cap = cv.VideoCapture(self.video_path)
+            total = int(self.cap.get(cv.CAP_PROP_FRAME_COUNT))
+            self.total_frames.emit(total)
+            
+        elif self.mode == "livestream":
+            self.cap = cv.VideoCapture(0)
+        if self.cap:    
+            self.seek_signal.connect(self.seek)
+    
+    @Slot(int)
+    def seek(self, frame_number):
+        self.pending_seek = frame_number
+    
+    @Slot()
+    def run(self):
+        self.pending_seek = None
+        if self.cap is None:
+            return
+
+        if not self.cap.isOpened():
+            print(f"Failed to open capture: {self.video_path or 'camera'}")
+            return
+        
+        total = int(self.cap.get(cv.CAP_PROP_FRAME_COUNT))
+        self.total_frames.emit(total)
+        self.running.emit(True)
+        
+        while self.cap.isOpened():
+            fps = int(self.cap.get(cv.CAP_PROP_FPS))
+            self.fps.emit(fps)
+            if self.pending_seek is not None:
+                self.cap.set(cv.CAP_PROP_POS_FRAMES, self.pending_seek)
+                self.pending_seek = None
+            
+            ret, frame = self.cap.read()
+            if ret:
+                self.capture_signal.emit(ret, frame)
+            import time
+            time.sleep(1.0 / fps)
     
 if __name__ == "__main__":
+    qapp = QApplication(sys.argv)
     main = Main()
     main.run()
+    
+    sys.exit(qapp.exec())
