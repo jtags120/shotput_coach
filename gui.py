@@ -97,6 +97,8 @@ class HomeScreen(QWidget):
         self.stack.setCurrentIndex(1)
 
 class InputScreen(QWidget):
+    image_path = Signal(str)
+    mode_signal = Signal(str)
     def __init__(self, main_obj, stack):
         super().__init__()
         self.stack = stack
@@ -159,9 +161,9 @@ class InputScreen(QWidget):
         self.main_layout.addWidget(self.start_btn)
 
         
-        self.image_btn.clicked.connect(lambda: self.set_mode("image"))
-        self.video_btn.clicked.connect(lambda: self.set_mode("video"))
-        self.livestream_btn.clicked.connect(lambda: self.set_mode("livestream"))
+        self.image_btn.clicked.connect(lambda: (self.set_mode("image"), self.mode_signal.emit("image")))
+        self.video_btn.clicked.connect(lambda: (self.set_mode("video"), self.mode_signal.emit("video")))
+        self.livestream_btn.clicked.connect(lambda: (self.set_mode("livestream"), self.mode_signal.emit("livestream")))
         self.file_browse.clicked.connect(self.browse_file)
         self.output_browse.clicked.connect(self.browse_output)
         self.raw_browse.clicked.connect(self.browse_output)
@@ -271,6 +273,9 @@ class InputScreen(QWidget):
         )
         self.main_obj.start_processing_threads()
         
+        if self.mode == "image":
+            self.image_path.emit(file_path)
+        
         self.stack.setCurrentIndex(2)
         
 class ProcessingScreen(QWidget):
@@ -303,30 +308,50 @@ class ProcessingScreen(QWidget):
         self.slider.sliderReleased.connect(self.end_scrub)
         self.slider.sliderMoved.connect(self.scrub_to)
         self.playing = True
-
+        
         
         self.play_btn.clicked.connect(self.toggle_play)
         self.back_btn.clicked.connect(self.go_back)
         
         self.main_obj.frame_transfer.connect(self.display_frame)
-        
+    
+    @Slot(str)
+    def get_mode(self, mode):
+        self.mode = mode
+        print(self.mode)
+        if self.mode == "image":
+            self.slider.hide()
+            self.play_btn.hide()
+            self.playing = False
+            self.slider.setValue(0)
+        elif self.mode == "video":
+            self.slider.show()
+            self.play_btn.show()
+            self.playing = True
+    
+    
     @Slot(int)
     def set_total_frames(self, total):
-        self.slider.setRange(0, total)
+        self.slider.setRange(1, total)
         
     @Slot()
     def start_scrub(self):
-        # Pause playback while scrubbing
+        self.was_playing = self.playing
         self.user_scrubbing = True
         self.playing = False
+        self.play_btn.setText("Play")
 
     @Slot()
     def end_scrub(self):
-        self.user_scrubbing = False
-        self.playing = True
-        # Seek to final slider position
         frame_number = self.slider.value()
-        self.main_obj.capture_worker.seek_signal.emit(frame_number)
+        self.user_scrubbing = False
+        self.playing = self.was_playing
+        self.play_btn.setText("Pause" if self.playing else "Play")
+        
+        buffer = self.main_obj.capture_worker.frame_buffer
+        if 0 <= frame_number < len(buffer):
+            frame = buffer[frame_number]
+            self.display_frame(frame, frame_number)
 
     @Slot(int)
     def scrub_to(self, frame_number):
@@ -338,24 +363,23 @@ class ProcessingScreen(QWidget):
         self.play_btn.setText("Pause" if self.playing else "Play")
     
     @Slot(np.ndarray, int)
-    def display_frame(self, frame: np.ndarray, timestamp: int):
+    def display_frame(self, frame: np.ndarray, frameindex: int):
         if frame is None:
             return
+        if self.playing or self.mode == "image":
+            rgb_frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
+            h, w, ch = rgb_frame.shape
+            bytes_per_line = ch * w
+            img = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888) # type: ignore
+            pix = QPixmap.fromImage(img).scaled(
+                self.video_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation # type: ignore
+            )
+            self.video_label.setPixmap(pix)
 
-        rgb_frame = cv.cvtColor(frame, cv.COLOR_BGR2RGB)
-        h, w, ch = rgb_frame.shape
-        bytes_per_line = ch * w
-        img = QImage(rgb_frame.data, w, h, bytes_per_line, QImage.Format_RGB888) # type: ignore
-        pix = QPixmap.fromImage(img).scaled(
-            self.video_label.size(), Qt.KeepAspectRatio, Qt.SmoothTransformation # type: ignore
-        )
-        self.video_label.setPixmap(pix)
-
-        if self.user_scrubbing:
-            self.slider.setValue(timestamp)
+        if not self.user_scrubbing and self.playing:
+            self.slider.setValue(frameindex)
 
     def go_back(self):
-        # Stop showing frames
         self.playing = False
         self.video_label.clear()
         self.video_label.setText("Waiting for frames...")
@@ -403,11 +427,11 @@ class GUI(QWidget):
         self.splitter.addWidget(self.workspace)
 
         layout.addWidget(self.splitter)
-        
+        self.input_screen.mode_signal.connect(self.processing_screen.get_mode)
  
     def showEvent(self, event):
         super().showEvent(event)
         init_sidebar_width = self.sidebar.collapsed_width()
         self.sidebar.setMaximumWidth(init_sidebar_width)
         self.sidebar.setMinimumWidth(init_sidebar_width)
-        self.splitter.setSizes([init_sidebar_width, int(self.width()*0.75)])
+        self.splitter.setSizes([init_sidebar_width, int(self.width()*0.50)])

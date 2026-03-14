@@ -1,3 +1,5 @@
+import time
+
 import gui
 from PySide6.QtCore import QTimer, Signal, Slot, QObject, QEventLoop, QThread
 from mediapipe.tasks.python.components.containers import NormalizedLandmark
@@ -45,6 +47,7 @@ class process(QThread):
         self.options = PoseLandmarkerOptions(None)
         self.model = r"C:\Users\joshu\Documents\projects\idk_man_the_fucking_shotput_coach_thing\pose_landmarker_heavy.task"
         self.frame_queue = deque(maxlen=2)
+        self.x = -1
 
     @Slot(str)
     def route(self, process_type: str):
@@ -52,28 +55,28 @@ class process(QThread):
 
             case "image":
                 self.VisionRunningMode = mp.tasks.vision.RunningMode.IMAGE
-
+                self.options = PoseLandmarkerOptions(
+                    base_options = BaseOptions(model_asset_path = self.model),
+                    running_mode=self.VisionRunningMode.IMAGE
+                )
+                self.img_path = ""
                 self.x = 0
                 
             case "video":
-                self.VisionRunningMode = mp.tasks.vision.RunningMode
+                self.VisionRunningMode = mp.tasks.vision.RunningMode.VIDEO
                 self.options = PoseLandmarkerOptions(
                     base_options = BaseOptions(model_asset_path=self.model),
                     running_mode=self.VisionRunningMode.VIDEO)
                 self.x = 1
                 
             case "livestream":
-                self.VisionRunningMode = mp.tasks.vision.RunningMode.LIVE_STREAM
+                self.VisionRunningMode = mp.tasks.vision.RunningMode.VIDEO
                 self.options = PoseLandmarkerOptions(
                     base_options = BaseOptions(model_asset_path=self.model),
-                    running_mode=self.VisionRunningMode.LIVE_STREAM,
-                    result_callback=self.callback,
+                    running_mode=self.VisionRunningMode.VIDEO,
                 )
                 self.x = 2
-                
-    def callback(self, result, output_image: mp.Image, timestamp: int): # type: ignore
-
-        self.result = result.pose_landmarks[0]
+    
 
     def draw_landmarks_on_image(self, rgb_image, landmark_list):
 
@@ -104,6 +107,11 @@ class process(QThread):
     def update_fps(self, fps):
         self.CAM_FPS = fps
 
+    @Slot(str)
+    def get_img_path(self, path: str):
+        self.img_path = path
+        
+        
     def run(self):
         self.timestamp = 0
         try:
@@ -116,51 +124,67 @@ class process(QThread):
         self.filters = [None]
         self.timer = QTimer(self)
         self.timer.timeout.connect(self.process_one_frame)
-        self.timer.start(33)
+        self.timer.start(16)
         
     def process_one_frame(self):
-        
-        if not self.frame_queue:
+
+        if self.x == 0:
+            self.timer = None
+            mp_image = mp.Image.create_from_file(self.img_path)
+            
+            pose_landmarker_result = self.landmarker.detect(mp_image)
+            
+            np_image = np.array(mp_image.numpy_view(), dtype=np.uint8)
+            np_image = cv.cvtColor(np_image, cv.COLOR_RGB2BGR)
+            annotated_image = self.draw_landmarks_on_image(np_image, pose_landmarker_result.pose_landmarks)
+            
+            self.image.emit(annotated_image, 1)
+            
+            
             return
-        self.frame = self.frame_queue.pop()
+        else:
+            
         
-        
-        if not self.ret or self.frame is None:
-            self.timer.stop()
-            return
-
-
-        height, width = self.frame.shape[:2]
-        target = (1920,1080) if width > height else (1080,1920)
-
-        if (width, height) != target:
-            self.frame = cv.resize(self.frame, target)
-
-        rgb_frame = cv.cvtColor(self.frame, cv.COLOR_BGR2RGB)
-        mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
-        self.timestamp += 33
-
-        if self.x == 1:
-            result = self.landmarker.detect_for_video(mp_image, self.timestamp)
-            if not result.pose_landmarks:
-                self.received_new_frame = False
+            if not self.frame_queue:
                 return
-            self.result = result.pose_landmarks[0]
+            self.frame = self.frame_queue.pop()
+            
+            
+            if not self.ret or self.frame is None:
+                return
 
-        if self.result and len(self.result) > 0:
-            if self.filters[0] is None:
-                self.filters = ks.make_filters(self.result, self.CAM_FPS)
 
-            landmarks = self.result
-            smoothed = ks.smooth_landmarks(landmarks, self.filters)
-            self.smoothed_landmarks = [
-                NormalizedLandmark(x=f.x[0], y=f.x[1], z=f.x[2], visibility=landmarks[i].visibility)
-                for i, f in enumerate(smoothed)
-            ]
+            height, width = self.frame.shape[:2]
+            target = (1920,1080) if width > height else (1080,1920)
 
-        annotated_frame = self.draw_landmarks_on_image(self.frame, [self.smoothed_landmarks])
-        
+            if (width, height) != target:
+                self.frame = cv.resize(self.frame, target)
 
-        
-        self.image.emit(annotated_frame, self.timestamp)
-        self.received_new_frame = False
+            rgb_frame = cv.cvtColor(self.frame, cv.COLOR_BGR2RGB)
+            mp_image = mp.Image(image_format=mp.ImageFormat.SRGB, data=rgb_frame)
+            self.timestamp = time.perf_counter_ns() // 10000000
+
+            if self.x == 1:
+                result = self.landmarker.detect_for_video(mp_image, self.timestamp)
+                if not result.pose_landmarks:
+                    self.received_new_frame = False
+                    return
+                self.result = result.pose_landmarks[0]
+
+            if self.result and len(self.result) > 0:
+                if self.filters[0] is None:
+                    self.filters = ks.make_filters(self.result, self.CAM_FPS)
+
+                landmarks = self.result
+                smoothed = ks.smooth_landmarks(landmarks, self.filters)
+                self.smoothed_landmarks = [
+                    NormalizedLandmark(x=f.x[0], y=f.x[1], z=f.x[2], visibility=landmarks[i].visibility)
+                    for i, f in enumerate(smoothed)
+                ]
+
+            annotated_frame = self.draw_landmarks_on_image(self.frame, [self.smoothed_landmarks])
+            
+
+            
+            self.image.emit(annotated_frame, self.timestamp)
+            self.received_new_frame = False
