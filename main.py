@@ -55,7 +55,7 @@ class Main(QObject):
             self.capture_worker.capture_signal.connect(self.worker.new_frame)
             self.capture_worker.fps.connect(self.worker.update_fps)
             
-        self.worker.image.connect(self.gui.processing_screen.display_frame)
+        self.worker.image.connect(self.gui.processing_screen.update_buffer)
         
             
         self.worker_thread.started.connect(self.worker.run)
@@ -125,7 +125,7 @@ class Capture(QThread):
             
             if self.pending_seek is not None:
                 self.cap.set(cv.CAP_PROP_POS_FRAMES, self.pending_seek)
-                self.current_frame = self.pending_seek
+                current_frame = self.pending_seek
                 self.pending_seek = None
                 
             ret, frame = self.cap.read()
@@ -133,8 +133,7 @@ class Capture(QThread):
                 current_frame += 1
                 self.frame_buffer.append(frame)
                 self.capture_signal.emit(ret, frame, current_frame)
-            import time
-            time.sleep(1.0 / fps)
+
     
 if __name__ == "__main__":
     qapp = QApplication(sys.argv)

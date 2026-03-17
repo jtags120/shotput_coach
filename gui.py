@@ -282,6 +282,9 @@ class ProcessingScreen(QWidget):
     def __init__(self, main_obj, stack):
         super().__init__()
         self.user_scrubbing = False
+        self.frame_index = 0
+        self.buffer = {}
+        self.timestamps = []
         self.stack = stack
         self.main_obj = main_obj
         self.main_layout = QVBoxLayout(self)
@@ -313,8 +316,17 @@ class ProcessingScreen(QWidget):
         self.play_btn.clicked.connect(self.toggle_play)
         self.back_btn.clicked.connect(self.go_back)
         
-        self.main_obj.frame_transfer.connect(self.display_frame)
-    
+    @Slot(np.ndarray, int)
+    def update_buffer(self, frame, timestamp):
+        
+        self.buffer[self.frame_index] = {"frame": frame, "timestamp": timestamp}
+        
+        if not self.timestamps or timestamp > self.timestamps[-1]:
+            self.timestamps.append(timestamp)
+        self.display_frame(frame, timestamp)
+        self.frame_index += 1
+        
+        
     @Slot(str)
     def get_mode(self, mode):
         self.mode = mode
@@ -330,28 +342,31 @@ class ProcessingScreen(QWidget):
             self.playing = True
     
     
-    @Slot(int)
-    def set_total_frames(self, total):
-        self.slider.setRange(1, total)
+    @Slot()
+    def set_total_frames(self):
+        self.slider.setRange(1, len(self.buffer))
         
     @Slot()
     def start_scrub(self):
-        self.was_playing = self.playing
         self.user_scrubbing = True
         self.playing = False
         self.play_btn.setText("Play")
 
     @Slot()
     def end_scrub(self):
-        frame_number = self.slider.value()
+        frame_index = self.slider.value()
+        print(f"end_scrub called, frame_index={frame_index}, in_buffer={frame_index in self.buffer}")
         self.user_scrubbing = False
-        self.playing = self.was_playing
         self.play_btn.setText("Pause" if self.playing else "Play")
         
-        buffer = self.main_obj.capture_worker.frame_buffer
-        if 0 <= frame_number < len(buffer):
-            frame = buffer[frame_number]
-            self.display_frame(frame, frame_number)
+        
+        if frame_index in self.buffer:
+            timestamp = self.buffer[frame_index]["timestamp"]
+            frame = self.buffer[frame_index]["frame"]
+            self.display_frame(frame, timestamp, True)
+            
+            self.main_obj.capture_worker.seek_signal.emit(frame_index)
+            
 
     @Slot(int)
     def scrub_to(self, frame_number):
@@ -363,7 +378,7 @@ class ProcessingScreen(QWidget):
         self.play_btn.setText("Pause" if self.playing else "Play")
     
     @Slot(np.ndarray, int)
-    def display_frame(self, frame: np.ndarray, frameindex: int):
+    def display_frame(self, frame: np.ndarray, timestamp: int, force = False):
         if frame is None:
             return
         if self.playing or self.mode == "image":
@@ -377,7 +392,7 @@ class ProcessingScreen(QWidget):
             self.video_label.setPixmap(pix)
 
         if not self.user_scrubbing and self.playing:
-            self.slider.setValue(frameindex)
+            self.slider.setValue(timestamp)
 
     def go_back(self):
         self.playing = False
@@ -396,10 +411,7 @@ class GUI(QWidget):
         super().__init__()
         self.setWindowTitle("Landmark Estimation")
         self.resize(900, 600)
-
-       
         
-
         layout = QVBoxLayout(self)
 
     
