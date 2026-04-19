@@ -40,7 +40,7 @@ def get_video():
         return {"error": "no video yet"}
     
     def iterfile():
-        with open(output_path, "rb") as f:
+        with open(output_path, "rb") as f: # type: ignore
             yield from f
             
     return StreamingResponse(iterfile(), media_type="video/mp4")
