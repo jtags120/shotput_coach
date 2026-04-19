@@ -1,3 +1,4 @@
-config.py
+__pycache__
 pose_landmarker_heavy.task
-__pycache_
+/processing
+config.py
