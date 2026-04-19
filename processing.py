@@ -41,6 +41,7 @@ class process(threading.Thread):
         running_mode=mp.tasks.vision.RunningMode.VIDEO)
         self.frame_queue = queue.Queue()
         self.output_queue = queue.Queue()
+        self.output_dimensions = ()
 
     def draw_landmarks_on_image(self, rgb_image, landmark_list):
 
