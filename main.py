@@ -44,7 +44,7 @@ class Main():
             output_path
         ])
         
-        os.remove(os.path.join(temp_path, "temp.mp4"))
+        os.remove(temp_path)
         
 class Capture(threading.Thread):
     
